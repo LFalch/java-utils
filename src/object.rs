@@ -1,3 +1,4 @@
+use std::num::Wrapping;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
 use std::ffi::OsStr;
 use std::hash::{BuildHasher, Hash};
@@ -120,14 +121,17 @@ impl_for_iterable! {
 }
 // COLLECTIONS END
 
+mod wrapping_pow;
+use self::wrapping_pow::WrapPow;
+
 impl HashCode for str {
     fn hash_code(&self) -> i32 {
         let n = self.chars().count() as u32;
         self.chars()
             .enumerate()
             .map(|(i, c)| (i as u32, c as i32))
-            .map(|(i, c)| c.wrapping_mul(31i32.pow(n - i - 1)))
-            .sum()
+            .map(|(i, c)| Wrapping(c.wrapping_mul(31i32.wrap_pow(n - i - 1))))
+            .sum::<Wrapping<_>>().0
     }
 }
 
@@ -138,8 +142,8 @@ impl HashCode for OsStr {
         self.encode_wide()
             .enumerate()
             .map(|(i, c)| (i as u32, i32::from(c)))
-            .map(|(i, c)| c.wrapping_mul(31i32.pow(n - i - 1)))
-            .sum()
+            .map(|(i, c)| Wrapping(c.wrapping_mul(31i32.wrap_pow(n - i - 1))))
+            .sum::<Wrapping<_>>().0
     }
 }
 #[cfg(unix)]
@@ -156,7 +160,7 @@ impl HashCode for Path {
     }
 }
 
-macro_rules! impl_for_prim {
+macro_rules! impl_for_prim_signed {
     ($($type:ty)*) => (
         $(
             impl HashCode for $type {
@@ -168,10 +172,29 @@ macro_rules! impl_for_prim {
     );
 }
 
-impl_for_prim! {
-    i8 u8
-    i16 u16
+macro_rules! impl_for_prim_unsigned {
+    ($($u:ty, $i:ty)*) => (
+        $(
+            impl HashCode for $u {
+                fn hash_code(&self) -> i32 {
+                    (*self as $i).hash_code()
+                }
+            }
+        )*
+    );
+}
+
+impl_for_prim_signed! {
+    i8
+    i16
     i32
+}
+
+impl_for_prim_unsigned! {
+    u8, i8
+    u16, i16
+    u32, i32
+    u64, i64
 }
 
 impl HashCode for bool {
@@ -190,12 +213,6 @@ impl HashCode for char {
     }
 }
 
-impl HashCode for u32 {
-    fn hash_code(&self) -> i32 {
-        *self as i32
-    }
-}
-
 impl HashCode for f32 {
     fn hash_code(&self) -> i32 {
         self.to_bits() as i32
@@ -204,19 +221,13 @@ impl HashCode for f32 {
 
 impl HashCode for f64 {
     fn hash_code(&self) -> i32 {
-        let v = self.to_bits();
-        (v.pow((v >> 32) as u32)) as i32
+        self.to_bits().hash_code()
     }
 }
 
 impl HashCode for i64 {
     fn hash_code(&self) -> i32 {
-        self.pow((*self >> 32) as u32) as i32
-    }
-}
-impl HashCode for u64 {
-    fn hash_code(&self) -> i32 {
-        self.pow((*self >> 32) as u32) as i32
+        (*self ^ (*self >> 32)) as i32
     }
 }
 
